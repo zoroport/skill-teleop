@@ -1,0 +1,12 @@
+std_msgs/Header header
+uint64 monotonic_ns
+uint64 sequence
+uint64 session
+bool valid
+bool active
+string error
+string metadata_json
+string[] joint_names
+float64[] positions
+float64[] velocities
+geometry_msgs/Pose pose

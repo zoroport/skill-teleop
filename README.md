@@ -1,4 +1,7 @@
 # Skill-based Teleoperation
+
+**RM＋Xhand＋D435 / Unity→ROS2 采集与 BC/DP 训练：请使用 [中文接入指南](README_RM_XHAND.md)。**
+该路径使用 `python -m skill_teleop.collect`，与下面的 UR/ZMQ 原始入口独立。
 This repository contains a clean codebase for controlling bimanual UR5e robots for dex manipulation tasks. It supports:
 - **Quest Teleoperation** - Using Meta Quest 2 controllers for real-time control
 - **BC Policy Deployment** - Running trained behavior cloning policies

@@ -1,0 +1,12 @@
+dual_arm_teleop_node:
+  ros__parameters:
+    enabled_sides: [left]
+    left_robot_ip: "192.168.1.19"
+    left_robot_port: 8080
+    thread_mode: 2
+    telemetry_enabled: true
+    telemetry_host_ip: ""  # Empty: local interface used to reach the RM.
+    telemetry_port: 8090
+    left_home_file: "/home/cc/Wlh_Projects/01_dexscrew/skill-teleop/calibration/rm_left_home.json"
+    home_speed_percent: 10
+    home_timeout_sec: 60.0

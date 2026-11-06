@@ -1,0 +1,14 @@
+std_msgs/Header header
+uint64 monotonic_ns
+uint64 sequence
+uint64 session
+bool valid
+bool active
+string error
+string kind
+geometry_msgs/Pose raw_delta
+geometry_msgs/Pose target
+float64[] sdk_pose
+uint64 call_start_ns
+uint64 call_end_ns
+int32 return_code

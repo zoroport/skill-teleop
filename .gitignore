@@ -62,3 +62,11 @@ temp/
 # System files
 .DS_Store
 Thumbs.db
+
+# Local ROS2 collection artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+data/
+calibration/
+.venv-collection/

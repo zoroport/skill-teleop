@@ -1,0 +1,13 @@
+std_msgs/Header header
+uint64 monotonic_ns
+uint64 sequence
+uint64 session
+bool valid
+string error
+string metadata_json
+string mode
+string[] joint_names
+float64[] positions
+bool tactile_valid
+uint32[] tactile_shape
+float64[] tactile

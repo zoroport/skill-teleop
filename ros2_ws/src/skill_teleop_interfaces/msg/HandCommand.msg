@@ -1,0 +1,11 @@
+std_msgs/Header header
+uint64 monotonic_ns
+uint64 sequence
+uint64 session
+bool valid
+string error
+string mode
+float64[] positions
+uint64 call_start_ns
+uint64 call_end_ns
+int32 return_code
