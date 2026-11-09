@@ -1,5 +1,8 @@
 # RM＋Xhand＋D435：Unity 遥操作示教与 BC/DP 训练
 
+**训练后的四策略部署**已新增独立入口，见 [部署与验证指南](../minbc/DEPLOY_RM_XHAND.md)。
+下文记录的是采集和训练流程；部署时退出遥操作、手部技能节点和采集器，使用独立硬件桥。
+
 本接入使用左侧 RM、单 Xhand、外部固定 D435。Unity → ROS-TCP Endpoint →
 原 RM 遥操作节点 → RM SDK 的控制链路保留；独立采集器订阅实际反馈与命令。
 手部使用已验证的 `nutbolt_1019.pt`，以 20 Hz 执行 RL 旋拧技能。
@@ -217,6 +220,38 @@ python -m skill_teleop.keyboard --side left
 
 ## 5. 文件、质检和转换
 
+### 保存松开姿态时报关节越界
+
+`/xhand/skill/capture_release` 检查最新一次整手反馈 `self.measured`，按 SDK
+`finger_state[0:12]` 顺序、弧度单位校验，要求当前模式为 HOLD。当前固定范围如下：
+
+| SDK 下标（从 0 开始） | 最小值 rad | 最大值 rad |
+|---|---:|---:|
+| 0 | 0 | 1.83 |
+| 1 | -1.05 | 1.57 |
+| 2 | -0.17 | 1.83 |
+| 3 | -0.175 | 0.175 |
+| 4–11（每个关节） | 0 | 1.92 |
+
+这些是 `nut_policy.py` 中的配置范围，经策略顺序转换为 SDK 顺序；不是运行时查询到的
+真实硬件物理限位，也不完全等于 `02_HandAndArm_control/Hand/urdf` 的限位。
+保存松开姿态时允许最多 **3°（约 0.05235988 rad，包含边界）**的反馈越界：
+低于下限不超过 3°时保存为下限，高于上限不超过 3°时保存为上限；范围内的值原样保存。
+任一关节超出超过 3°，整次保存被拒绝，原松开姿态保持不变。
+例如关节 9 为 -2.1666°、关节 11 为 -0.166662°时，两者都保存为 0。
+容差仅用于 `capture_release`，不扩大控制目标限位，不修改原始反馈或采集记录。
+抓握、松开目标及加载已保存姿态仍使用严格限位检查。
+
+新版错误会列出所有越界关节下标、实测值（rad/deg）、允许范围和超出量。
+更新 `hand_node.py` 后重启手部技能节点即可，无需重新编译 ROS 接口。
+保存成功的响应会列出被裁剪的关节及裁剪前后值。标定文件中的 `positions` 是合法目标，
+同时保存 `measured_positions`、`clipped_joint_indices` 和 `capture_tolerance_deg` 以便追溯。
+也可读取整手反馈辅助核对（这里是实测位置，不是下发目标）：
+
+```bash
+ros2 topic echo /xhand/collection/state --once --field positions
+```
+
 ```text
 data/rm_xhand_raw/<日期_时间_唯一ID>/
   metadata.json     # 配置、时间基准、状态；中断时不会变成 success
@@ -301,6 +336,8 @@ python -m pip install -r requirements-rm.txt
 python train_rm.py --dataset ../skill-teleop/data/rm_xhand_dataset --policy bc --name rm_bc
 python train_rm.py --dataset ../skill-teleop/data/rm_xhand_dataset --policy dp --name rm_dp
 ```
+
+RM 训练入口默认启用训练随机裁剪和验证居中裁剪（`data.scratch_crop=true`），将 320×240 RGB 裁至 288×216，宽高各保留 90%。带触觉/无触觉、BC/DP 均适用。原始采集和数据转换仍保留全幅画面，已有转换数据无需重新导出。
 
 默认 RGB＋RM 关节＋末端位姿＋手关节观测，scratch ResNet，历史 2 帧、预测 16 帧、
 动作窗口 8 帧，batch size 32、300 epochs、学习率 0.0002；DP 采用 DDPM、100 个扩散步。

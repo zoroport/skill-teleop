@@ -16,6 +16,8 @@ from skill_teleop_interfaces.msg import HandCommand, HandState
 from .hand_device import HandDevice
 from .schema import atomic_json, clock_identity, vector
 
+RELEASE_CAPTURE_TOLERANCE_DEG = 3.0
+
 
 class HandSkillNode(Node):
     def __init__(self, args):
@@ -71,11 +73,25 @@ class HandSkillNode(Node):
         # A lightweight scheduler skips overdue slots instead of catching up in bursts.
         self.timer = self.create_timer(.002, self.tick)
 
-    def validate_target(self, values):
+    def validate_target(self, values, tolerance_rad=0.0):
         q = vector(values, 12)
-        if np.any(q < self.lower) or np.any(q > self.upper):
-            raise ValueError("Hand target exceeds mechanical limits")
-        return q.copy()
+        if not np.isfinite(tolerance_rad) or tolerance_rad < 0:
+            raise ValueError("Invalid capture tolerance")
+        # Tiny arithmetic allowance only for the inclusive capture-tolerance boundary.
+        allowance = tolerance_rad + (1e-12 if tolerance_rad > 0 else 0)
+        outside = np.flatnonzero((self.lower - q > allowance) | (q - self.upper > allowance))
+        if outside.size:
+            details = []
+            for i in outside:
+                excess = max(self.lower[i] - q[i], q[i] - self.upper[i])
+                details.append(
+                    f"joint[{i}]={q[i]:.9g} rad ({np.degrees(q[i]):.6g} deg), "
+                    f"allowed=[{self.lower[i]:.9g}, {self.upper[i]:.9g}] rad, "
+                    f"excess={excess:.9g} rad")
+            raise ValueError("Hand target exceeds configured limits (SDK order, zero-based): "
+                             + "; ".join(details)
+                             + f"; allowed capture tolerance={np.degrees(tolerance_rad):g} deg")
+        return np.clip(q, self.lower, self.upper)
 
     def header(self, msg, seq, t):
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -84,6 +100,7 @@ class HandSkillNode(Node):
 
     def handle_service(self, action, response):
         try:
+            result_message = None
             if self.mode == "FAULT":
                 raise RuntimeError(f"Restart node after resolving fault: {self.error}")
             if action == "start":
@@ -95,12 +112,22 @@ class HandSkillNode(Node):
             elif action == "capture_release":
                 if self.mode != "HOLD":
                     raise ValueError("Stop skill before capturing a measured release pose")
-                self.release = self.validate_target(self.measured)
+                measured = self.measured.copy()
+                release = self.validate_target(measured, np.deg2rad(RELEASE_CAPTURE_TOLERANCE_DEG))
+                clipped = np.flatnonzero(release != measured).tolist()
                 self.args.release_file.parent.mkdir(parents=True, exist_ok=True)
-                atomic_json(self.args.release_file, {"positions": self.release.tolist(),
-                            "order": "hardware", "hand_id": self.args.hand_id})
+                atomic_json(self.args.release_file, {"positions": release.tolist(),
+                            "order": "hardware", "hand_id": self.args.hand_id,
+                            "measured_positions": measured.tolist(), "clipped_joint_indices": clipped,
+                            "capture_tolerance_deg": RELEASE_CAPTURE_TOLERANCE_DEG})
+                # Only adopt the new pose after saving succeeds. Feedback is never clipped.
+                self.release = release
                 self.metadata.update(release_positions=self.release.tolist(),
                                      release_source=str(self.args.release_file.resolve()))
+                result_message = f"HOLD; release pose saved; capture tolerance={RELEASE_CAPTURE_TOLERANCE_DEG:g} deg"
+                if clipped:
+                    result_message += "; clipped to limits (SDK zero-based): " + "; ".join(
+                        f"joint[{i}] {measured[i]:.9g} -> {release[i]:.9g} rad" for i in clipped)
             else:
                 target = self.policy.initial_hardware if action == "grasp" else self.release
                 if target is None:
@@ -108,7 +135,7 @@ class HandSkillNode(Node):
                 self.ready = False
                 self.mode = "GRASP" if action == "grasp" else "RELEASE"
                 self.transition = (time.monotonic(), self.target.copy(), self.validate_target(target))
-            response.success, response.message = True, self.mode
+            response.success, response.message = True, result_message or self.mode
         except Exception as exc:
             response.success, response.message = False, str(exc)
         return response

@@ -56,11 +56,14 @@ class CameraProducer:
                 if not color or not depth:
                     raise RuntimeError("Missing color or depth frame")
                 numbers = (color.get_frame_number(), depth.get_frame_number())
+                deltas = (None if previous_numbers is None else
+                          [current - previous for current, previous in zip(numbers, previous_numbers)])
                 gap = previous_numbers is not None and any(
                     current != previous + 1 for current, previous in zip(numbers, previous_numbers))
                 previous_numbers = numbers
                 self.callback({"stream": "camera", "t_ns": received, "seq": seq,
                                "valid": not gap, "error": "Camera device frame gap" if gap else "",
+                               "frame_gap": gap, "frame_deltas": deltas,
                                "metadata": metadata,
                                "device_timestamp_ms": color.get_timestamp(),
                                "depth_timestamp_ms": depth.get_timestamp(),
